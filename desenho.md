@@ -84,8 +84,8 @@ promovida, e fica gravada junto com `producao.json`.
 
 | Sinal | O que mede | Referência hoje | Alerta | Crítico |
 |---|---|---|---|---|
-| **S1 · Distribuição das previsões** | % de cada rótulo previsto na janela | 40% positiva · 35% negativa · 25% neutra (base de treino) | Uma classe a mais de 5 p.p. da referência | Uma classe a mais de 10 p.p. da referência (ex.: *neutra* < 15%) |
-| **S2 · Confiança média** | Média de `confianca` e % de previsões com confiança < 0,5 | A medir na validação na Parte 2 | Queda de 0,05 na média | Queda de 0,10 na média **ou** > 20% das previsões com confiança < 0,5 |
+| **S1 · Distribuição das previsões** | % de cada rótulo previsto na janela | 42% positiva · 32% negativa · 26% neutra (previsões na validação) | Uma classe a mais de 5 p.p. da referência | Uma classe a mais de 10 p.p. da referência (ex.: *neutra* < 16%) |
+| **S2 · Confiança média** | Média de `confianca` e % de previsões com confiança < 0,5 | 0,80 de média · 4,7% abaixo de 0,5 (validação) | Queda de 0,05 na média | Queda de 0,10 na média **ou** > 20% das previsões com confiança < 0,5 |
 | **S3 · Forma do texto de entrada** | Média de palavras após `limpar()` e % de textos só com emojis | 11,2 palavras · 2% só emojis | Média de palavras a mais de 15% da referência **ou** só emojis > 5% | Média a mais de 25% **ou** só emojis > 10% |
 
 ### Regra de gatilho: o que dispara o retreino e o que só alerta
@@ -132,15 +132,26 @@ O lote de 20 mil avaliações (no repositório, `lote-novo.csv`, com 600 linhas)
 |---|---|---|---|
 | Textos só com emojis | 2% | **28%** | ❌ Bloqueia na etapa 3 (máx. 10%) |
 | Classe *neutra* | 24% | **9%** | ❌ Bloqueia na etapa 3 (desvio de 16 p.p. da referência de 25% > 10) |
-| Classe *positiva* | 40% | **53%** | ❌ Bloqueia na etapa 3 (desvio de 13 p.p. > 10) |
+| Classe *positiva* | 40% | **52%** | ❌ Bloqueia na etapa 3 (desvio de 12 p.p. > 10) |
 | Média de palavras | 11,2 | **8,1** (−28%) | ❌ Bloqueia com o limite de 25% deste desenho |
 | F1 macro (se treinasse) | 0,82 em produção | **0,73** | ❌ Bloquearia na etapa 5 (< 0,80) |
 | F1 da *neutra* (se treinasse) | 0,78 em produção | **0,58** | ❌ Bloquearia na etapa 5 (< 0,70) |
 
 **Decisão: o lote não vira modelo.** Ele é barrado **primeiro na etapa 3** (testes de dados), antes de
-gastar treino. Na lógica da proposta C, esse lote também é um **sinal S3 crítico**: textos menores e
-cheios de emojis indicam que a entrada mudou de forma. O caminho certo é abrir um incidente de dados
-e investigar a coleta, não retreinar com ele.
+gastar treino: 4 das 9 checagens falham. Na Parte 2, os números acima foram confirmados rodando o
+pipeline, e o gate reprovou com F1 macro 0,731 e *neutra* 0,583, como previsto no slide.
+
+**E se esse lote chegasse em produção?** Passamos o lote pelo modelo atual para simular os sinais:
+
+| Sinal | Referência | Com o lote novo | Estado |
+|---|---|---|---|
+| S1 · *neutra* prevista | 26% | **3,8%** (e *negativa* sobe de 32% para 57%) | 🔴 Crítico |
+| S2 · confiança < 0,5 | 4,7% | **29%** (média cai de 0,80 para 0,71) | 🔴 Crítico |
+| S3 · só emojis / palavras | 2% / 11,2 | **28% / 8,1** | 🔴 Crítico |
+
+Pela regra da seção 4, **S3 crítico manda abrir incidente de dados, não retreinar**, mesmo com S1 e S2
+críticos. Retreinar com esse lote ensinaria o modelo a classificar emoji como *negativa*. O caminho
+certo é investigar a coleta.
 
 **Atenção ao desafio do roteiro:** o limite de ±30% na média de palavras **não** barraria este lote,
 porque a queda medida é de 28%. Por isso este desenho usa **25%**. A alternativa é contar palavras no
@@ -154,7 +165,7 @@ que deveria pegar.
 | Etapas 1 a 6 no CI | ✅ `ci-classificador.yml` |
 | Deploy com versão imutável e alias | ✅ `deploy-classificador.yml`, `publicar.sh`, `trafego.sh` |
 | Canary com rollback automático | ✅ `canary-classificador.yml`, `canary_check.py` (Aula 4) |
-| Regra de tamanho do texto na etapa 3 | ⬜ Desafio da Aula 2, em `test_dados.py` |
+| Regra de tamanho do texto na etapa 3 | ✅ `test_tamanho_medio_do_texto` em `test_dados.py` (desafio da Aula 2) |
 | Registro dos sinais por requisição | ⬜ Log estruturado em `servico.py` (vai para o CloudWatch Logs) |
 | Agregação diária e regra de gatilho | ⬜ Script que lê os logs e aplica a tabela da seção 4 |
 | Workflow de retreino disparado por sinal | ⬜ `workflow_dispatch`/agendado que roda o script de gatilho |
